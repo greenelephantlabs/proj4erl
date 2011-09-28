@@ -17,6 +17,11 @@
 
 static ErlNifResourceType *pj_cd_type = NULL;
 
+static struct {
+    ERL_NIF_TERM ok;
+    ERL_NIF_TERM error;
+} proj4erl_atoms;
+
 typedef struct { projPJ pj; } pj_cd;
 
 static void
@@ -34,6 +39,9 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM load_info)
     return -1;
 
   pj_cd_type = rt;
+
+  proj4erl_atoms.ok       = enif_make_atom(env, "ok");
+  proj4erl_atoms.error    = enif_make_atom(env, "error");
 
   return 0;
 }
@@ -58,6 +66,8 @@ unload(ErlNifEnv* env, void* priv)
   return;
 }
 
+#define return_error(x) return enif_make_tuple2(env, proj4erl_atoms.error, enif_make_string(env, x, ERL_NIF_LATIN1))
+#define return_ok(x) return enif_make_tuple2(env, proj4erl_atoms.ok, x)
 
 static ERL_NIF_TERM
 erl_proj4_init(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
@@ -76,49 +86,22 @@ erl_proj4_init(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
     return enif_make_badarg(env);
   }
 
-  ERL_NIF_TERM list = argv[0];
-
-  if (!enif_get_list_length(env, list, &paramc)) {
-    DLOG("Not a list\n");
-    return enif_make_badarg(env);
-  }
-
-  paramv = (char **)enif_alloc(paramc);
-
-  while (enif_get_list_cell(env, list, &head, &tail)) {
-    tmpc = enif_get_string(env, head, tmp, sizeof(tmp), ERL_NIF_LATIN1);
-    if (tmpc <= 0) {
-      DLOG("Unable to read one of args\n");
-      return enif_make_badarg(env);
-    }
-    DFLOG("Paramv %d len %d \"%s\"\n", i, tmpc, tmp);
-    paramv[i] = (char *)enif_alloc(strlen(tmp) + 1);
-    strcpy(paramv[i], tmp);
-    list = tail;
-    i++;
-  }
-  if (i != paramc) {
-    DLOG("Inconsistency\n");
-    return enif_make_badarg(env);
+  tmpc = enif_get_string(env, argv[0], tmp, sizeof(tmp), ERL_NIF_LATIN1);
+  if (tmpc <= 0) {
+    return_error("unable to read one of args");
   }
 
   cd = enif_alloc_resource(pj_cd_type, sizeof(pj_cd));
 
-  DFLOG("Paramc: %d\n", paramc);
-  for (i = 0; i < paramc; i++) {
-    DFLOG("Paramv[%d] = %s\n", i, paramv[i]);
-  }
-
-  if (!(cd->pj = pj_init(paramc, paramv))) {
+  if (!(cd->pj = pj_init_plus(tmp))) {
     enif_release_resource(cd);
-    DFLOG("Unable to init PJ: %s\n", pj_strerrno(pj_errno));
-    return enif_make_badarg(env);
+    return_error(pj_strerrno(pj_errno));
   }
 
   result = enif_make_resource(env, cd);
   enif_release_resource(cd);
 
-  return result;
+  return_ok(result);
 }
 
 static ERL_NIF_TERM
@@ -146,41 +129,17 @@ erl_proj4_transform(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
   double x, y, z;
   pj_cd *from, *to;
 
-  if (!enif_get_resource(env, argv[0], pj_cd_type, (void **) &from)) {
-    DLOG("Unable to get from\n");
-    return enif_make_badarg(env);
-  }
-  if (!enif_get_resource(env, argv[1], pj_cd_type, (void **) &to)) {
-    DLOG("Unable to get to\n");
-    return enif_make_badarg(env);
-  }
-
-
-  if (!enif_get_tuple(env, argv[2], &vint, &terms)) {
-    DLOG("Not a tuple\n");
+  if (!enif_get_resource(env, argv[0], pj_cd_type, (void **) &from) ||
+      !enif_get_resource(env, argv[1], pj_cd_type, (void **) &to) ||
+      !enif_get_tuple(env, argv[2], &vint, &terms) ||
+      !((vint == 2) || (vint == 3)) ||
+      !enif_get_double(env, terms[0], &x) ||
+      !enif_get_double(env, terms[1], &y) ||
+      (vint == 3 && !enif_get_double(env, terms[2], &z))) {
+    DLOG("Unable to get Z\n");
     return enif_make_badarg(env);
   }
 
-  if (!((vint == 2) || (vint == 3))) {
-    DLOG("Wrong tuple length\n");
-    return enif_make_badarg(env);
-  }
-
-  if (!enif_get_double(env, terms[0], &x)) {
-    DLOG("Unable to get X\n");
-    return enif_make_badarg(env);
-  }
-  if (!enif_get_double(env, terms[1], &y)) {
-    DLOG("Unable to get Y\n");
-    return enif_make_badarg(env);
-  }
-
-  if (vint == 3) {
-    if (!enif_get_double(env, terms[2], &z)) {
-      DLOG("Unable to get Z\n");
-      return enif_make_badarg(env);
-    }
-  }
   DFLOG("From: %x %s\n", &(from->pj), pj_get_def(from->pj, 0));
   DFLOG("To: %x %s\n", &(to->pj), pj_get_def(to->pj, 0));
   DFLOG("Old: %f %f\n", x, y);
@@ -201,36 +160,36 @@ erl_proj4_transform(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
   DFLOG("New: %f %f\n", x, y);
 
   if (vint == 3) {
-    return enif_make_tuple(env, 3, enif_make_double(env, x), enif_make_double(env, y), enif_make_double(env, z));
+    return_ok(enif_make_tuple(env, 3, enif_make_double(env, x), enif_make_double(env, y), enif_make_double(env, z)));
   } else {
-    return enif_make_tuple(env, 2, enif_make_double(env, x), enif_make_double(env, y));
+    return_ok(enif_make_tuple(env, 2, enif_make_double(env, x), enif_make_double(env, y)));
   }
 }
 
-/* static ERL_NIF_TERM */
-/* get_binary(ErlNifEnv* env, ERL_NIF_TERM a1) */
-/* { */
-/*   unsigned long mem_loc; */
-/*   if (!enif_get_ulong(env, a1, &mem_loc)) */
-/*     { */
-/*       return enif_make_badarg(env); */
-/*     } */
-/*   else */
-/*     { */
-/*       Binary* bin_ptr = (Binary*) mem_loc; */
-/*       ErlNifBinary nif_bin; */
+  /* static ERL_NIF_TERM */
+  /* get_binary(ErlNifEnv* env, ERL_NIF_TERM a1) */
+  /* { */
+  /*   unsigned long mem_loc; */
+  /*   if (!enif_get_ulong(env, a1, &mem_loc)) */
+  /*     { */
+  /*       return enif_make_badarg(env); */
+  /*     } */
+  /*   else */
+  /*     { */
+  /*       Binary* bin_ptr = (Binary*) mem_loc; */
+  /*       ErlNifBinary nif_bin; */
 
-/*       enif_alloc_binary(env, bin_ptr->orig_size, &nif_bin); */
-/*       memcpy(nif_bin.data, bin_ptr->orig_bytes, bin_ptr->orig_size); */
-/*       return enif_make_binary(env, &nif_bin); */
-/*     } */
-/* } */
+  /*       enif_alloc_binary(env, bin_ptr->orig_size, &nif_bin); */
+  /*       memcpy(nif_bin.data, bin_ptr->orig_bytes, bin_ptr->orig_size); */
+  /*       return enif_make_binary(env, &nif_bin); */
+  /*     } */
+  /* } */
 
-static ErlNifFunc proj4erl_funcs[] =
-  {
-    {"init", 1, erl_proj4_init},
-    {"transform", 3, erl_proj4_transform},
-    {"get_def", 1, erl_proj4_get_def}
-  };
+  static ErlNifFunc proj4erl_funcs[] =
+    {
+      {"init", 1, erl_proj4_init},
+      {"transform", 3, erl_proj4_transform},
+      {"get_def", 1, erl_proj4_get_def}
+    };
 
-ERL_NIF_INIT(proj4, proj4erl_funcs, load, reload, upgrade, unload)
+  ERL_NIF_INIT(proj4, proj4erl_funcs, load, reload, upgrade, unload)
