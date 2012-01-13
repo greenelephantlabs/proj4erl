@@ -1,6 +1,9 @@
 -module(proj4).
+
+%% API
 -export([init/1, transform/3, get_def/1]).
 
+%% Types
 -opaque cd() :: binary().
 -type point() :: {float(), float()} | {float(), float(), float()}.
 
@@ -8,12 +11,18 @@
 -spec transform/3 :: (cd(), cd(), point()) -> {'ok', point()}.
 -spec get_def/1 :: (cd()) -> string().
 
+%% Stuff
 -include_lib("eunit/include/eunit.hrl").
 
 -on_load(load_nif/0).
 
+load_nif() ->
+    Dir = filename:dirname(code:where_is_file("proj4erl.app")),
+    Path = filename:join([Dir, "..", "priv", "proj4erl_nif"]),
+    erlang:load_nif(Path, 0).
 
 
+%% NIFs
 init(_Args) ->
     nif_error(?LINE).
 
@@ -28,12 +37,8 @@ nif_error(Line) ->
 
 
 
-load_nif() ->
-    Dir = filename:dirname(code:where_is_file("proj4erl.app")),
-    Path = filename:join([Dir, "..", "priv", "proj4erl_nif"]),
-    erlang:load_nif(Path, 0).
 
-
+%% Tests
 
 init_test() ->
     proj4:init(["proj=merc", "ellps=clrk66", "lat_ts=33"]).
@@ -45,7 +50,4 @@ wgs84_2180_test() ->
     {ok, CRS2180} = proj4:init("+init=epsg:2180"),
     P = {21.049804687501, 52.22900390625},
     {ok, P2} = proj4:transform(WGS84, CRS2180, P),
-    io:format("Transformed from '~s' to '~s': ~p~n", [proj4:get_def(WGS84), proj4:get_def(CRS2180), P2]),
     {639951.5695094677, 486751.7840663176} = P2.
-
-
