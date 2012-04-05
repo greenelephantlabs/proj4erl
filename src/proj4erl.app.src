@@ -1,0 +1,5 @@
+{application, proj4erl,
+ [{description, "Proj4 for Erlang using NIFs"},
+  {vsn, "0.5.0"},
+  {registered, []},
+  {applications, []}]}.

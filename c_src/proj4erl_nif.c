@@ -73,13 +73,9 @@ static ERL_NIF_TERM
 erl_proj4_init(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
   ERL_NIF_TERM result;
-  ERL_NIF_TERM head, tail;
   pj_cd* cd;
-  unsigned paramc;
-  char** paramv;
   char tmp[MAXBUFLEN];
   int tmpc;
-  int i = 0;
 
   if (argc != 1) {
     DFLOG("Wrong arguments number %d\n", argc);
