@@ -23,6 +23,17 @@ Initialized projPJ references are being automatically garbage collected.
 
 Feel free to fork and send pull requests!
 
+Setup
+-----
+
+Clone the project and run (on Ubuntu; adapt apt-get command to install
+proj4 development files on other systems):
+
+```bash
+$ sudo apt-get install libproj-dev
+$ make
+```
+
 TODO
 ----
  * ad-hoc transform calls, with implicit initialization of projPJ and
